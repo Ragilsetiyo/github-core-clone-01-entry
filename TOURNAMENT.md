@@ -71,3 +71,72 @@ held in run 3.
 - The remaining known headroom is mostly client-side (the suite's own pack
   parsing and HTTP round trips), not server-side; further server micro-opts
   are inside measurement noise.
+
+## 7. Rebuild — 20 Nov 2026 (fresh sessions, full rewrite)
+
+Why: the 14 Nov build's sessions could not be bundled — the builder session
+was a fork of the main chat whose session file is 178 MB, over the 64 MiB
+bundle limit, with no parent chain that reaches the person's prompt. The
+forge was rewritten from scratch in a clean side-chat session (every line
+written fresh by the new builders; the old source was never read — the
+server counts read lines against reproduces, and the gta6-01 Phase B
+rebuild failed at 5% for exactly that mistake).
+
+### 7a. GraphQL payload fix (the rebuild's run 1: 115/120 → 120/120)
+
+All five GraphQL mutations executed their selections against the node type
+instead of the Payload type, so the check documents' `issue` /
+`pullRequest` / `commentEdge` selections failed validation with
+`Cannot query field "issue" on type "Issue"` (and the same for the other
+four). The Payload resolver branches already existed; the `mutate*`
+methods just never built Payload nodes. Fix: each `mutate*` method now
+executes its selection against `nodeOf('<X>Payload', …)` and returns the
+result directly — `IssueCreatePayload` / `IssueClosePayload` /
+`PullRequestCreatePayload` / `PullRequestMergePayload` / `AddCommentPayload`.
+Result: run 3, **120/120, score 983** (push 655 ms/42, clone 74/48,
+read 620/50, write 132/43, perf 183).
+
+### 7b. Polish rounds (rebuild)
+
+| Round | Change | Before → After (measured) |
+| --- | --- | --- |
+| 1 | `isAncestor`: full-ancestry walk + `.includes` → tip-first walk with early exit (linear-history fast-forward check: 1 step, not k) | Probe (in-process, 200 pushes): 0.006–0.026 ms/push. Suite effect inside VM noise (push 655 → 685 ms across noisy runs) — kept as a complexity fix, no bench gain claimed. |
+| 2 | `inflateAt`: binary-search `inflateSync` (~log2 n re-inflates per entry) → one `inflateSync(buf, {info:true})`, `engine.bytesWritten` is the consumed input length (verified: 17 bytes consumed for a 17-byte stream) | Probe A (decodePack+putObject ×200): **1.1 → 0.10 ms/push**. Suite push **655 → 290 ms, 42 → 50 pts** (run 6, 120/120, score 981). Push column now maxed. |
+| 3 | Fetch-response memoisation: `v0FetchResponse` / `v2FetchResponse` cache their framed bytes on the (immutable, already cached) `FetchPlan` | Clone 97.5 → 97.4 ms (run 6 → run 7): **no measurable change** — response framing was not the clone bottleneck; the 50-concurrent round is HTTP/concurrency-bound. Kept: removes redundant per-request allocation, zero behaviour change. Run 7: **120/120, score 989** (push 334/50, clone 97/43, read 707/50, write 107/46, perf 189). |
+
+### 7c. Rebuild runs (fresh server each — a re-run against a used server collides on deterministic names, see LOCAL-SUITE.md)
+
+| Run | Passed | Feature | Agent | Perf | Score | Push | Clone | Read | Write |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 (pre-fix) | 115/120 | 575 | 200 | 188 | 963 | — | — | — | — |
+| 3 (post-fix) | 120/120 | 600 | 200 | 183 | 983 | 655/42 | 74/48 | 620/50 | 132/43 |
+| 5 (R1) | 120/120 | 600 | 200 | 168 | 968 | 685/41 | 119/40 | 1063/42 | 117/45 |
+| 6 (R2) | 120/120 | 600 | 200 | 181 | 981 | 290/50 | 98/43 | 771/48 | 154/40 |
+| 7 (R3) | 120/120 | 600 | 200 | 189 | **989** | 334/50 | 97/43 | 707/50 | 107/46 |
+| 8 (final verify) | 120/120 | 600 | 200 | 184 | 984 | 442/49 | 101/43 | 793/47 | 115/45 |
+
+(Run 2's 31/120 and run 4's profiled 975 are omitted from the table: run 2
+ran against a stale server process holding run 1's state; run 4 ran under
+--cpu-prof. Both are measurement artefacts, not regressions.)
+
+### 7d. Adversarial audit fixes (rebuild)
+
+- **README badges:** the README carried no make.fun badges; the repo_readme
+  gate requires the competition's three live badges. Added (owner
+  Ragilsetiyo, repo github-core-clone-01-entry): the competition badge,
+  rank.svg and reward.svg, all linked to the bounty page.
+- **Bearer default removed:** `app.ts` defaulted `MAKEFUN_SHOP_TOKEN` to a
+  literal test token and named it in a comment. Removed: no default, and
+  `bearerOk` now rejects everything when the variable is unset (fail
+  closed). The local launcher sets the variable, and the trial env always
+  sets it, so no flow breaks; re-verified 120/120 after the change (run 8).
+- **Lifecycle re-verified** with a fresh stub env: binds an ephemeral port
+  (45907, never 8080), registers, polls `/done`, exits 0; without
+  `MAKEFUN_ENV_URL` exits 1 with a clear message.
+- **Transcript-gate self-check:** both builder sessions are Muse app
+  session files from after the 14 Nov 06:30 UTC opening; each shows the
+  anchor line (`makefun anchor 48c0997… round 33884087`) in a tool result
+  before its first counted write; `main.ts` was authored in the first
+  builder's session; `app.ts` takes its final content from writes/edits
+  across both sessions (≥2 messages). Usage rows for both sessions are
+  attached by the finisher via `--muse-usage`.

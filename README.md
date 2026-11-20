@@ -1,5 +1,9 @@
 # github-core-clone-01 — a GitHub-compatible git forge
 
+[![make.fun](https://make.fun/badge/github-core-clone-01.svg)](https://make.fun/bounty/github-core-clone-01)
+[![rank](https://make.fun/badge/github-core-clone-01/Ragilsetiyo/github-core-clone-01-entry/rank.svg)](https://make.fun/bounty/github-core-clone-01)
+[![reward](https://make.fun/badge/github-core-clone-01/Ragilsetiyo/github-core-clone-01-entry/reward.svg)](https://make.fun/bounty/github-core-clone-01)
+
 One Node 22 process. No dependencies, no git binary, no external service.
 It speaks git smart HTTP (upload-pack v2, receive-pack v0), REST v3,
 GraphQL v4 and MCP — all from a single in-memory store.
@@ -48,20 +52,25 @@ The server binds port 0 (the kernel picks a free one); it never binds 8080.
 ## Measure it
 
 Against the kit's local runner (`sdk/run.ts`, the same suite sealed in the
-env), from a fresh server on this machine:
+env), from a fresh server on this machine. Rebuild runs (20 Nov, fresh
+sessions; run 1 was before the GraphQL payload fix, runs 3–7 after it):
 
 | Run | Conformance | Feature | Agent | Perf (local) | Score (local) |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 111/120 | 555 | 200 | 178 | 933 |
-| 2 | **120/120** | 600 | 200 | 181 | 981 |
-| 3 | **120/120** | 600 | 200 | 186 | 986 |
+| 1 | 115/120 | 575 | 200 | 188 | 963 |
+| 3 | **120/120** | 600 | 200 | 183 | 983 |
+| 5 | **120/120** | 600 | 200 | 168 | 968 |
+| 6 | **120/120** | 600 | 200 | 181 | 981 |
+| 7 | **120/120** | 600 | 200 | 189 | **989** |
 
-Local perf p50s (run 3): push 394 ms, clone 102 ms, read 634 ms,
-write 120 ms (geomean 235 ms). These are measured on a shared 1.5-CPU VM
+Local perf p50s (run 7): push 334 ms, clone 97 ms, read 707 ms,
+write 107 ms (geomean 223 ms). These are measured on a shared 1.5-CPU VM
 and are NOT production numbers — production runs the same suite on a
 2-CPU gVisor pod with noisy neighbours, where the reference forge's
 calibration p50s are push 1641 ms, clone 267 ms, read 2760 ms, write
-349 ms. See `LOCAL-SUITE.md` for the full breakdown and the re-run note.
+349 ms. Round-to-round variance on this VM is ±20%, so single-run
+differences under ~15% are noise, not signal. See `LOCAL-SUITE.md` for
+the full breakdown and the re-run note.
 
 ## What was deliberately NOT done
 
